@@ -89,9 +89,16 @@ def get_google_books(query, max_results=10):
     if not GOOGLE_BOOKS_KEY:
         return []
     try:
+        # Fetch 3x more so we can filter and return best ones
+        fetch_count = max_results * 3
+
         url      = (
             f"https://www.googleapis.com/books/v1/volumes?"
-            f"q={query}&maxResults={max_results}"
+            f"q={query}"
+            f"&maxResults={min(fetch_count, 40)}"
+            f"&orderBy=relevance"
+            f"&printType=books"
+            f"&langRestrict=en"
             f"&key={GOOGLE_BOOKS_KEY}"
         )
         response = req.get(url, timeout=10)
@@ -101,24 +108,66 @@ def get_google_books(query, max_results=10):
         books = []
         for item in data.get('items', []):
             info = item.get('volumeInfo', {})
+
+            # Skip books without title or authors
+            if not info.get('title'):
+                continue
+            if not info.get('authors'):
+                continue
+
+            # Get cover image
+            image_links = info.get('imageLinks', {})
+            cover = (
+                image_links.get('thumbnail') or
+                image_links.get('smallThumbnail') or
+                ''
+            )
+
+            # Replace http with https for cover URLs
+            if cover.startswith('http://'):
+                cover = cover.replace('http://', 'https://')
+
+            # Calculate relevance score
+            has_cover       = 1 if cover else 0
+            has_description = 1 if info.get('description') else 0
+            has_rating      = 1 if info.get('averageRating') else 0
+            rating          = info.get('averageRating', 0)
+            rating_count    = info.get('ratingsCount', 0)
+
+            relevance_score = (
+                has_cover       * 2 +
+                has_description * 1 +
+                has_rating      * 2 +
+                (rating / 5)    * 3 +
+                min(rating_count / 1000, 2)
+            )
+
             books.append({
-                'title'      : info.get('title', ''),
-                'authors'    : ', '.join(
+                'title'          : info.get('title', ''),
+                'authors'        : ', '.join(
                     info.get('authors', ['Unknown'])),
-                'description': info.get(
-                    'description', '')[:200] + '...'
+                'description'    : info.get(
+                    'description', '')[:250] + '...'
                     if info.get('description') else '',
-                'cover'      : info.get(
-                    'imageLinks', {}).get('thumbnail', ''),
-                'rating'     : info.get('averageRating', 0),
-                'pages'      : info.get('pageCount', 0),
-                'published'  : info.get('publishedDate', ''),
-                'category'   : ', '.join(
+                'cover'          : cover,
+                'rating'         : info.get('averageRating', 0),
+                'rating_count'   : info.get('ratingsCount', 0),
+                'pages'          : info.get('pageCount', 0),
+                'published'      : info.get('publishedDate', ''),
+                'category'       : ', '.join(
                     info.get('categories', ['Unknown'])),
-                'publisher'  : info.get('publisher', 'Unknown'),
-                'preview_url': info.get('previewLink', '')
+                'publisher'      : info.get('publisher', 'Unknown'),
+                'preview_url'    : info.get('previewLink', ''),
+                'relevance_score': relevance_score
             })
-        return books
+
+        # Sort by relevance score
+        books = sorted(books,
+                       key=lambda x: x['relevance_score'],
+                       reverse=True)
+
+        return books[:max_results]
+
     except Exception as e:
         print(f"Google Books error: {e}")
         return []
@@ -153,7 +202,7 @@ def content_based_recommend(book_title, top_n=10):
     sim_scores[idx] = 0
     top_indices = sim_scores.argsort()[::-1][:top_n]
     results     = []
-    for i, idx2 in enumerate(top_indices):
+    for idx2 in top_indices:
         row = books_df.iloc[idx2]
         results.append(format_book(
             row, sim_scores[idx2], 'TF-IDF Content'))
@@ -173,7 +222,7 @@ def svd_based_recommend(book_title, top_n=10):
     sim_scores[idx] = 0
     top_indices = sim_scores.argsort()[::-1][:top_n]
     results     = []
-    for i, idx2 in enumerate(top_indices):
+    for idx2 in top_indices:
         row = books_df.iloc[idx2]
         results.append(format_book(
             row, sim_scores[idx2], 'SVD'))
@@ -182,7 +231,7 @@ def svd_based_recommend(book_title, top_n=10):
 
 # ── Popularity Based Recommender ──────────────────────────────
 def popularity_based_recommend(top_n=10):
-    top    = books_df.nlargest(top_n, 'weighted_rating')
+    top = books_df.nlargest(top_n, 'weighted_rating')
     return [format_book(row, row['weighted_rating'],
                         'Popularity')
             for _, row in top.iterrows()]
@@ -216,8 +265,9 @@ def collaborative_recommend(user_id, top_n=10):
     )
     book_scores = book_scores.sort_values(
         'score_val', ascending=False).head(top_n)
-    result = book_scores.merge(books_df, on='ISBN', how='left')
-    result = result.dropna(subset=['title'])
+    result  = book_scores.merge(
+        books_df, on='ISBN', how='left')
+    result  = result.dropna(subset=['title'])
     results = []
     for _, row in result.iterrows():
         results.append(format_book(
@@ -366,7 +416,7 @@ def live_search(query: str, max_results: int = 10):
     return {
         "query"        : query,
         "total_results": len(results),
-        "source"       : "Google Books API",
+        "source"       : "Google Books API - Sorted by Relevance",
         "books"        : results
     }
 
