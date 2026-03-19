@@ -31,6 +31,9 @@ def load_models():
         svd_matrix   = np.load(
             os.path.join(MODEL_PATH, 'svd_matrix.npy'))
         print("✅ Models loaded successfully!")
+        print(f"  Books   : {len(books_df)}")
+        print(f"  Ratings : {len(ratings)}")
+        print(f"  Users   : {ratings['user_id'].nunique()}")
     except Exception as e:
         print(f"Models not found: {e}")
         print("Running save_model.py...")
@@ -121,25 +124,40 @@ def get_google_books(query, max_results=10):
         return []
 
 
+# ── Helper — Format Book Result ───────────────────────────────
+def format_book(row, score_val=0, method=''):
+    return {
+        'ISBN'       : str(row.get('ISBN', '')),
+        'title'      : str(row.get('title', '')),
+        'author'     : str(row.get('author', '')),
+        'year'       : str(row.get('year', '')),
+        'publisher'  : str(row.get('publisher', 'Unknown')),
+        'image_m'    : str(row.get('image_m', '')),
+        'avg_rating' : float(row.get('avg_rating', 0)),
+        'num_ratings': int(row.get('num_ratings', 0)),
+        'score_val'  : round(float(score_val), 4),
+        'method'     : method
+    }
+
+
 # ── Content Based Recommender (TF-IDF) ───────────────────────
 def content_based_recommend(book_title, top_n=10):
     matches = books_df[books_df['title'].str.contains(
         book_title, case=False, na=False)]
     if matches.empty:
         return []
-    idx        = matches.index[0]
-    query_vec  = tfidf_matrix[idx]
-    sim_scores = cosine_similarity(
+    idx         = matches.index[0]
+    query_vec   = tfidf_matrix[idx]
+    sim_scores  = cosine_similarity(
         query_vec, tfidf_matrix).flatten()
     sim_scores[idx] = 0
     top_indices = sim_scores.argsort()[::-1][:top_n]
-    result      = books_df.iloc[top_indices].copy()
-    result['score_val'] = sim_scores[top_indices]
-    result['method']    = 'TF-IDF Content'
-    return result[[
-        'ISBN','title','author','year',
-        'image_m','avg_rating','num_ratings',
-        'score_val','method']].to_dict('records')
+    results     = []
+    for i, idx2 in enumerate(top_indices):
+        row = books_df.iloc[idx2]
+        results.append(format_book(
+            row, sim_scores[idx2], 'TF-IDF Content'))
+    return results
 
 
 # ── SVD Based Recommender ─────────────────────────────────────
@@ -148,30 +166,26 @@ def svd_based_recommend(book_title, top_n=10):
         book_title, case=False, na=False)]
     if matches.empty:
         return []
-    idx        = matches.index[0]
-    query_vec  = svd_matrix[idx].reshape(1, -1)
-    sim_scores = cosine_similarity(
+    idx         = matches.index[0]
+    query_vec   = svd_matrix[idx].reshape(1, -1)
+    sim_scores  = cosine_similarity(
         query_vec, svd_matrix).flatten()
     sim_scores[idx] = 0
     top_indices = sim_scores.argsort()[::-1][:top_n]
-    result      = books_df.iloc[top_indices].copy()
-    result['score_val'] = sim_scores[top_indices]
-    result['method']    = 'SVD'
-    return result[[
-        'ISBN','title','author','year',
-        'image_m','avg_rating','num_ratings',
-        'score_val','method']].to_dict('records')
+    results     = []
+    for i, idx2 in enumerate(top_indices):
+        row = books_df.iloc[idx2]
+        results.append(format_book(
+            row, sim_scores[idx2], 'SVD'))
+    return results
 
 
 # ── Popularity Based Recommender ──────────────────────────────
 def popularity_based_recommend(top_n=10):
-    result = books_df.nlargest(top_n, 'weighted_rating')[
-        ['ISBN','title','author','year',
-         'image_m','avg_rating','num_ratings',
-         'weighted_rating']].copy()
-    result['score_val'] = result['weighted_rating']
-    result['method']    = 'Popularity'
-    return result.to_dict('records')
+    top    = books_df.nlargest(top_n, 'weighted_rating')
+    return [format_book(row, row['weighted_rating'],
+                        'Popularity')
+            for _, row in top.iterrows()]
 
 
 # ── Collaborative Filtering ───────────────────────────────────
@@ -204,11 +218,11 @@ def collaborative_recommend(user_id, top_n=10):
         'score_val', ascending=False).head(top_n)
     result = book_scores.merge(books_df, on='ISBN', how='left')
     result = result.dropna(subset=['title'])
-    result['method'] = 'Collaborative'
-    return result[[
-        'ISBN','title','author','year',
-        'image_m','avg_rating','num_ratings',
-        'score_val','method']].to_dict('records')
+    results = []
+    for _, row in result.iterrows():
+        results.append(format_book(
+            row, row['score_val'], 'Collaborative'))
+    return results
 
 
 # ── Hybrid Recommender ────────────────────────────────────────
@@ -238,12 +252,12 @@ def hybrid_recommend(book_title, top_n=10):
         books_df['ISBN'].isin(top_isbns_list)].copy()
     score_map           = dict(zip(top_isbns_list, scores_list))
     result['score_val'] = result['ISBN'].map(score_map)
-    result['method']    = 'Hybrid'
     result = result.sort_values('score_val', ascending=False)
-    return result[[
-        'ISBN','title','author','year',
-        'image_m','avg_rating','num_ratings',
-        'score_val','method']].to_dict('records')
+    results = []
+    for _, row in result.iterrows():
+        results.append(format_book(
+            row, row['score_val'], 'Hybrid'))
+    return results
 
 
 # ── Search by Author ──────────────────────────────────────────
@@ -252,27 +266,24 @@ def search_by_author(author_name, top_n=10):
         author_name, case=False, na=False)]
     if matches.empty:
         return []
-    result = matches.nlargest(top_n, 'avg_rating')[
-        ['ISBN','title','author','year',
-         'image_m','avg_rating','num_ratings']].copy()
-    result['score_val'] = result['avg_rating'] / 10
-    result['method']    = 'Author Search'
-    return result.to_dict('records')
+    top = matches.nlargest(top_n, 'avg_rating')
+    return [format_book(row, row['avg_rating']/10,
+                        'Author Search')
+            for _, row in top.iterrows()]
 
 
 # ── Search by Publisher ───────────────────────────────────────
 def search_by_publisher(publisher_name, top_n=10):
+    if 'publisher' not in books_df.columns:
+        return []
     matches = books_df[books_df['publisher'].str.contains(
-        publisher_name, case=False, na=False)] \
-        if 'publisher' in books_df.columns else pd.DataFrame()
+        publisher_name, case=False, na=False)]
     if matches.empty:
         return []
-    result = matches.nlargest(top_n, 'avg_rating')[
-        ['ISBN','title','author','year',
-         'image_m','avg_rating','num_ratings']].copy()
-    result['score_val'] = result['avg_rating'] / 10
-    result['method']    = 'Publisher Search'
-    return result.to_dict('records')
+    top = matches.nlargest(top_n, 'avg_rating')
+    return [format_book(row, row['avg_rating']/10,
+                        'Publisher Search')
+            for _, row in top.iterrows()]
 
 
 # ── Search by Year ────────────────────────────────────────────
@@ -280,15 +291,13 @@ def search_by_year(year, top_n=10):
     matches = books_df[books_df['year'] == year]
     if matches.empty:
         return []
-    result = matches.nlargest(top_n, 'avg_rating')[
-        ['ISBN','title','author','year',
-         'image_m','avg_rating','num_ratings']].copy()
-    result['score_val'] = result['avg_rating'] / 10
-    result['method']    = 'Year Search'
-    return result.to_dict('records')
+    top = matches.nlargest(top_n, 'avg_rating')
+    return [format_book(row, row['avg_rating']/10,
+                        'Year Search')
+            for _, row in top.iterrows()]
 
 
-# ── Search by Genre (via Google Books) ───────────────────────
+# ── Search by Genre (Google Books) ───────────────────────────
 def search_by_genre(genre, top_n=10):
     return get_google_books(
         f"subject:{genre}", max_results=top_n)
@@ -345,7 +354,10 @@ def get_user_recommendations(request: UserRecommendRequest):
 @app.get("/popular")
 def get_popular(top_n: int = 10):
     results = popularity_based_recommend(top_n)
-    return {"total_results": len(results), "books": results}
+    return {
+        "total_results": len(results),
+        "books"        : results
+    }
 
 
 @app.get("/live-search")
@@ -402,13 +414,18 @@ def genre_search(genre: str, top_n: int = 10):
 
 @app.get("/stats")
 def get_stats():
+    top_author = "Unknown"
+    try:
+        top_author = books_df.groupby('author')[
+            'num_ratings'].sum().idxmax()
+    except:
+        pass
     return {
         "total_books"  : len(books_df),
         "total_ratings": len(ratings),
-        "total_users"  : ratings['user_id'].nunique(),
-        "avg_rating"   : round(df['rating'].mean(), 2),
-        "top_author"   : books_df.groupby('author')[
-            'num_ratings'].sum().idxmax(),
+        "total_users"  : int(ratings['user_id'].nunique()),
+        "avg_rating"   : round(float(df['rating'].mean()), 2),
+        "top_author"   : top_author,
         "google_books" : "Enabled"
                          if GOOGLE_BOOKS_KEY
                          else "Not configured"

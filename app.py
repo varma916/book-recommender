@@ -1,5 +1,3 @@
-# app.py - Streamlit Frontend for Book Recommendation System
-
 import streamlit as st
 import requests
 import pandas as pd
@@ -16,7 +14,6 @@ st.title("Book Recommendation System")
 st.markdown("*Powered by TF-IDF + SVD + Collaborative Filtering + Google Books API*")
 st.markdown("---")
 
-# ── Stats Cards ───────────────────────────────────────────────
 try:
     stats = requests.get(
         f"{FASTAPI_URL}/stats", timeout=30).json()
@@ -30,11 +27,9 @@ try:
 except:
     st.warning("Could not connect to FastAPI!")
 
-
-# ── Main Tabs ─────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "Search Books",
-    "Search by Author/Publisher/Year/Genre",
+    "Search by Title",
+    "Search by Author / Publisher / Year / Genre",
     "User Recommendations",
     "Popular Books",
     "Live Book Search",
@@ -42,7 +37,50 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 ])
 
 
-# ── Tab 1 — Search by Title ───────────────────────────────────
+def show_books(books, key_prefix=""):
+    cols = st.columns(3)
+    for i, book in enumerate(books):
+        with cols[i % 3]:
+            img = book.get('image_m') or book.get('cover') or ''
+            if img and img != 'nan' and img.startswith('http'):
+                try:
+                    st.image(img, use_column_width=True)
+                except:
+                    st.image(
+                        "https://via.placeholder.com/200x300?text=No+Cover",
+                        use_column_width=True)
+            else:
+                st.image(
+                    "https://via.placeholder.com/200x300?text=No+Cover",
+                    use_column_width=True)
+            title   = book.get('title', '')[:50]
+            author  = book.get('author') or book.get('authors', '')
+            rating  = book.get('avg_rating') or book.get('rating', 0)
+            st.markdown(f"**{title}**")
+            st.caption(f"by {author}")
+            if rating:
+                st.caption(f"Rating: {rating}")
+            if book.get('year') and str(book.get('year')) != 'nan':
+                st.caption(f"Year: {book.get('year')}")
+            if book.get('publisher') and \
+               book.get('publisher') != 'Unknown':
+                st.caption(f"Publisher: {book.get('publisher')}")
+            if book.get('pages'):
+                st.caption(f"Pages: {book.get('pages')}")
+            if book.get('published'):
+                st.caption(f"Published: {book.get('published')}")
+            if book.get('description'):
+                st.caption(
+                    str(book.get('description'))[:100] + '...')
+            if book.get('preview_url'):
+                st.markdown(
+                    f"[Preview Book]({book.get('preview_url')})")
+            if book.get('score_val'):
+                st.caption(
+                    f"Score: {float(book.get('score_val')):.3f}")
+            st.markdown("---")
+
+
 with tab1:
     st.subheader("Find Similar Books by Title")
     col1, col2, col3 = st.columns([3, 2, 1])
@@ -85,43 +123,16 @@ with tab1:
                     else:
                         st.success(
                             f"Found {data['total_results']} "
-                            f"recommendations!")
+                            f"recommendations using "
+                            f"{data['method'].upper()}!")
                         st.markdown("---")
-                        recs = data['recommendations']
-                        cols = st.columns(3)
-                        for i, rec in enumerate(recs):
-                            with cols[i % 3]:
-                                if rec.get('image_m') and \
-                                   rec['image_m'] != 'nan':
-                                    try:
-                                        st.image(
-                                            rec['image_m'],
-                                            use_column_width=True)
-                                    except:
-                                        st.image(
-                                            "https://via.placeholder.com/200x300?text=No+Cover",
-                                            use_column_width=True)
-                                else:
-                                    st.image(
-                                        "https://via.placeholder.com/200x300?text=No+Cover",
-                                        use_column_width=True)
-                                st.markdown(
-                                    f"**{rec['title'][:50]}**")
-                                st.caption(f"by {rec['author']}")
-                                st.caption(
-                                    f"Rating: {rec['avg_rating']:.1f}"
-                                    f" | Ratings: {int(rec['num_ratings'])}")
-                                st.caption(
-                                    f"Score: {rec['score_val']:.3f}")
-                                st.markdown("---")
+                        show_books(data['recommendations'])
                 except Exception as e:
                     st.error(f"Error: {e}")
 
 
-# ── Tab 2 — Search by Author/Publisher/Year/Genre ─────────────
 with tab2:
     st.subheader("Search by Author, Publisher, Year or Genre")
-
     search_type = st.radio(
         "Search By:",
         ["Author", "Publisher", "Year", "Genre"],
@@ -141,7 +152,8 @@ with tab2:
             if not author_name:
                 st.warning("Please enter an author name!")
             else:
-                with st.spinner(f"Searching books by {author_name}..."):
+                with st.spinner(
+                        f"Searching books by {author_name}..."):
                     try:
                         response = requests.get(
                             f"{FASTAPI_URL}/author-search",
@@ -160,31 +172,7 @@ with tab2:
                                 f"Found {len(books)} books "
                                 f"by {author_name}!")
                             st.markdown("---")
-                            cols = st.columns(3)
-                            for i, book in enumerate(books):
-                                with cols[i % 3]:
-                                    if book.get('image_m') and \
-                                       book['image_m'] != 'nan':
-                                        try:
-                                            st.image(
-                                                book['image_m'],
-                                                use_column_width=True)
-                                        except:
-                                            st.image(
-                                                "https://via.placeholder.com/200x300?text=No+Cover",
-                                                use_column_width=True)
-                                    else:
-                                        st.image(
-                                            "https://via.placeholder.com/200x300?text=No+Cover",
-                                            use_column_width=True)
-                                    st.markdown(
-                                        f"**{book['title'][:50]}**")
-                                    st.caption(
-                                        f"by {book['author']}")
-                                    st.caption(
-                                        f"Rating: {book['avg_rating']:.1f}"
-                                        f" | Year: {int(book['year']) if str(book['year']) != 'nan' else 'N/A'}")
-                                    st.markdown("---")
+                            show_books(books)
                     except Exception as e:
                         st.error(f"Error: {e}")
 
@@ -192,7 +180,7 @@ with tab2:
         with col1:
             publisher_name = st.text_input(
                 "Enter Publisher Name:",
-                placeholder="e.g. Penguin, HarperCollins, Oxford")
+                placeholder="e.g. Penguin, HarperCollins")
         with col2:
             pub_top_n = st.slider(
                 "Results", 3, 10, 6, key="pub_slider")
@@ -214,36 +202,14 @@ with tab2:
                         books = data['books']
                         if not books:
                             st.error(
-                                f"No books found from {publisher_name}!")
+                                f"No books found from "
+                                f"{publisher_name}!")
                         else:
                             st.success(
                                 f"Found {len(books)} books "
                                 f"from {publisher_name}!")
                             st.markdown("---")
-                            cols = st.columns(3)
-                            for i, book in enumerate(books):
-                                with cols[i % 3]:
-                                    if book.get('image_m') and \
-                                       book['image_m'] != 'nan':
-                                        try:
-                                            st.image(
-                                                book['image_m'],
-                                                use_column_width=True)
-                                        except:
-                                            st.image(
-                                                "https://via.placeholder.com/200x300?text=No+Cover",
-                                                use_column_width=True)
-                                    else:
-                                        st.image(
-                                            "https://via.placeholder.com/200x300?text=No+Cover",
-                                            use_column_width=True)
-                                    st.markdown(
-                                        f"**{book['title'][:50]}**")
-                                    st.caption(
-                                        f"by {book['author']}")
-                                    st.caption(
-                                        f"Rating: {book['avg_rating']:.1f}")
-                                    st.markdown("---")
+                            show_books(books)
                     except Exception as e:
                         st.error(f"Error: {e}")
 
@@ -257,46 +223,27 @@ with tab2:
             year_top_n = st.slider(
                 "Results", 3, 10, 6, key="year_slider")
         if st.button("Search by Year"):
-            with st.spinner(f"Searching books from {year}..."):
+            with st.spinner(
+                    f"Searching books from {year}..."):
                 try:
                     response = requests.get(
                         f"{FASTAPI_URL}/year-search",
-                        params={"year": year,
-                                "top_n": year_top_n},
+                        params={
+                            "year" : year,
+                            "top_n": year_top_n
+                        },
                         timeout=30)
                     data  = response.json()
                     books = data['books']
                     if not books:
                         st.error(
-                            f"No books found from year {year}!")
+                            f"No books found from {year}!")
                     else:
                         st.success(
                             f"Found {len(books)} books "
                             f"from {year}!")
                         st.markdown("---")
-                        cols = st.columns(3)
-                        for i, book in enumerate(books):
-                            with cols[i % 3]:
-                                if book.get('image_m') and \
-                                   book['image_m'] != 'nan':
-                                    try:
-                                        st.image(
-                                            book['image_m'],
-                                            use_column_width=True)
-                                    except:
-                                        st.image(
-                                            "https://via.placeholder.com/200x300?text=No+Cover",
-                                            use_column_width=True)
-                                else:
-                                    st.image(
-                                        "https://via.placeholder.com/200x300?text=No+Cover",
-                                        use_column_width=True)
-                                st.markdown(
-                                    f"**{book['title'][:50]}**")
-                                st.caption(f"by {book['author']}")
-                                st.caption(
-                                    f"Rating: {book['avg_rating']:.1f}")
-                                st.markdown("---")
+                        show_books(books)
                 except Exception as e:
                     st.error(f"Error: {e}")
 
@@ -319,54 +266,28 @@ with tab2:
                 try:
                     response = requests.get(
                         f"{FASTAPI_URL}/genre-search",
-                        params={"genre"  : genre,
-                                "top_n"  : genre_top_n},
+                        params={
+                            "genre" : genre,
+                            "top_n" : genre_top_n
+                        },
                         timeout=30)
                     data  = response.json()
                     books = data['books']
                     if not books:
-                        st.error(
-                            f"No {genre} books found!")
+                        st.error(f"No {genre} books found!")
                     else:
                         st.success(
                             f"Found {len(books)} {genre} books "
                             f"from Google Books!")
                         st.markdown("---")
-                        cols = st.columns(3)
-                        for i, book in enumerate(books):
-                            with cols[i % 3]:
-                                if book.get('cover'):
-                                    st.image(
-                                        book['cover'],
-                                        use_column_width=True)
-                                else:
-                                    st.image(
-                                        "https://via.placeholder.com/200x300?text=No+Cover",
-                                        use_column_width=True)
-                                st.markdown(
-                                    f"**{book['title'][:50]}**")
-                                st.caption(
-                                    f"by {book['authors']}")
-                                if book.get('rating'):
-                                    st.caption(
-                                        f"Rating: {book['rating']}")
-                                if book.get('published'):
-                                    st.caption(
-                                        f"Published: {book['published']}")
-                                if book.get('description'):
-                                    st.caption(
-                                        book['description'][:100] + '...')
-                                if book.get('preview_url'):
-                                    st.markdown(
-                                        f"[Preview Book]({book['preview_url']})")
-                                st.markdown("---")
+                        show_books(books)
                 except Exception as e:
                     st.error(f"Error: {e}")
 
 
-# ── Tab 3 — User Recommendations ─────────────────────────────
 with tab3:
     st.subheader("Personalized Book Recommendations")
+    st.markdown("Get recommendations based on reading history")
     col1, col2 = st.columns([2, 1])
     with col1:
         user_id = st.number_input(
@@ -375,14 +296,16 @@ with tab3:
     with col2:
         user_top_n = st.slider(
             "Results", 3, 10, 6, key="user_slider")
-
     if st.button("Get My Recommendations"):
-        with st.spinner("Loading personalized recommendations..."):
+        with st.spinner(
+                "Loading personalized recommendations..."):
             try:
                 response = requests.post(
                     f"{FASTAPI_URL}/user-recommend",
-                    json={"user_id": user_id,
-                          "top_n"  : user_top_n},
+                    json={
+                        "user_id": user_id,
+                        "top_n"  : user_top_n
+                    },
                     timeout=30)
                 data = response.json()
                 if data['total_results'] == 0:
@@ -390,42 +313,19 @@ with tab3:
                 else:
                     st.success(
                         f"Found {data['total_results']} "
-                        f"recommendations for User {user_id}!")
+                        f"recommendations for "
+                        f"User {user_id}!")
                     st.markdown("---")
-                    recs = data['recommendations']
-                    cols = st.columns(3)
-                    for i, rec in enumerate(recs):
-                        with cols[i % 3]:
-                            if rec.get('image_m') and \
-                               rec['image_m'] != 'nan':
-                                try:
-                                    st.image(
-                                        rec['image_m'],
-                                        use_column_width=True)
-                                except:
-                                    st.image(
-                                        "https://via.placeholder.com/200x300?text=No+Cover",
-                                        use_column_width=True)
-                            else:
-                                st.image(
-                                    "https://via.placeholder.com/200x300?text=No+Cover",
-                                    use_column_width=True)
-                            st.markdown(
-                                f"**{rec['title'][:50]}**")
-                            st.caption(f"by {rec['author']}")
-                            st.caption(
-                                f"Rating: {rec['avg_rating']:.1f}")
-                            st.markdown("---")
+                    show_books(data['recommendations'])
             except Exception as e:
                 st.error(f"Error: {e}")
 
 
-# ── Tab 4 — Popular Books ─────────────────────────────────────
 with tab4:
     st.subheader("Most Popular Books")
+    st.markdown("Top books by weighted rating score")
     pop_top_n = st.slider(
         "Number of Books", 3, 10, 6, key="pop_slider")
-
     if st.button("Load Popular Books"):
         with st.spinner("Loading popular books..."):
             try:
@@ -441,47 +341,22 @@ with tab4:
                     st.success(
                         f"Top {len(books)} most popular books!")
                     st.markdown("---")
-                    cols = st.columns(3)
-                    for i, book in enumerate(books):
-                        with cols[i % 3]:
-                            if book.get('image_m') and \
-                               book['image_m'] != 'nan':
-                                try:
-                                    st.image(
-                                        book['image_m'],
-                                        use_column_width=True)
-                                except:
-                                    st.image(
-                                        "https://via.placeholder.com/200x300?text=No+Cover",
-                                        use_column_width=True)
-                            else:
-                                st.image(
-                                    "https://via.placeholder.com/200x300?text=No+Cover",
-                                    use_column_width=True)
-                            st.markdown(
-                                f"**{book['title'][:50]}**")
-                            st.caption(f"by {book['author']}")
-                            st.caption(
-                                f"Rating: {book['avg_rating']:.1f}"
-                                f" | Ratings: {int(book['num_ratings'])}")
-                            st.markdown("---")
+                    show_books(books)
             except Exception as e:
                 st.error(f"Error: {e}")
 
 
-# ── Tab 5 — Live Book Search ──────────────────────────────────
 with tab5:
     st.subheader("Live Book Search")
-    st.markdown("Search any book using Google Books API - Real time results!")
-
+    st.markdown(
+        "Search any book using Google Books API - Real time!")
     col1, col2 = st.columns([3, 1])
     with col1:
         search_query = st.text_input(
             "Search for any book:",
-            placeholder="e.g. Python programming, Machine Learning")
+            placeholder="e.g. Python programming, AI, Cricket")
     with col2:
         max_results = st.slider("Max Results", 3, 10, 5)
-
     if st.button("Search Google Books"):
         if not search_query:
             st.warning("Please enter a search query!")
@@ -504,48 +379,11 @@ with tab5:
                             f"Found {len(books)} books "
                             f"from Google Books!")
                         st.markdown("---")
-                        cols = st.columns(3)
-                        for i, book in enumerate(books):
-                            with cols[i % 3]:
-                                if book.get('cover'):
-                                    st.image(
-                                        book['cover'],
-                                        use_column_width=True)
-                                else:
-                                    st.image(
-                                        "https://via.placeholder.com/200x300?text=No+Cover",
-                                        use_column_width=True)
-                                st.markdown(
-                                    f"**{book['title'][:50]}**")
-                                st.caption(
-                                    f"by {book['authors']}")
-                                if book.get('rating'):
-                                    st.caption(
-                                        f"Rating: {book['rating']}")
-                                if book.get('pages'):
-                                    st.caption(
-                                        f"Pages: {book['pages']}")
-                                if book.get('published'):
-                                    st.caption(
-                                        f"Published: {book['published']}")
-                                if book.get('publisher'):
-                                    st.caption(
-                                        f"Publisher: {book['publisher']}")
-                                if book.get('category'):
-                                    st.caption(
-                                        f"Category: {book['category']}")
-                                if book.get('description'):
-                                    st.caption(
-                                        book['description'][:100] + '...')
-                                if book.get('preview_url'):
-                                    st.markdown(
-                                        f"[Preview Book]({book['preview_url']})")
-                                st.markdown("---")
+                        show_books(books)
                 except Exception as e:
                     st.error(f"Error: {e}")
 
 
-# ── Tab 6 — Stats ─────────────────────────────────────────────
 with tab6:
     st.subheader("Dataset Statistics")
     try:
@@ -562,16 +400,14 @@ with tab6:
             st.metric("Top Author",   stats['top_author'])
             st.metric("Google Books", stats['google_books'])
         st.markdown("---")
-        st.markdown("**About the Dataset**")
         st.info(
-            "This recommendation system uses the Book Crossing "
-            "Dataset which contains over 1 million book ratings "
-            "from real users. The system uses TF-IDF content "
-            "based filtering SVD matrix factorization and "
+            "This system uses the Book Crossing Dataset with "
+            "over 1 million real book ratings. Uses TF-IDF "
+            "content filtering, SVD matrix factorization and "
             "collaborative filtering to recommend books."
         )
         st.markdown("---")
-        st.markdown("**Search Options Available**")
+        st.markdown("**Available Search Options**")
         col1, col2 = st.columns(2)
         with col1:
             st.success("Search by Book Title")
@@ -579,13 +415,12 @@ with tab6:
             st.success("Search by Publisher")
         with col2:
             st.success("Search by Publication Year")
-            st.success("Search by Genre")
+            st.success("Search by Genre (Live)")
             st.success("Live Google Books Search")
     except Exception as e:
         st.error(f"Error: {e}")
 
 
-# ── Footer ────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
     "*Built with FastAPI + Streamlit | "
