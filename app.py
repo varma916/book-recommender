@@ -8,7 +8,7 @@ st.set_page_config(
     layout     = "wide"
 )
 
-FASTAPI_URL = "https://book-recommender-api.onrender.com"
+FASTAPI_URL = "https://book-recommender-api-idm1.onrender.com"
 
 st.title("Book Recommendation System")
 st.markdown("*Powered by TF-IDF + SVD + Collaborative Filtering + Google Books API*")
